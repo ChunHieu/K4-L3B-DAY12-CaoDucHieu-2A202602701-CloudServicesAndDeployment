@@ -1,119 +1,121 @@
 # Phiếu Phản Ánh — K4 Level 3B, Ngày 12
 
-> **Bài làm cá nhân.** Trả lời bằng lời của chính bạn, dựa trên những gì bạn
-> quan sát được khi chạy code — không sao chép đáp án của người khác.
+> **Bài làm cá nhân.** Các câu trả lời dưới đây dựa trên kết quả em trực tiếp quan sát
+> khi cài đặt, chạy test, build container và deploy service trong bài lab.
 >
-> Cách trả lời: thay dòng `> *Câu trả lời của bạn*` bằng câu trả lời.
-> `grade.py` đếm số câu đã trả lời (15 điểm cho 10 câu).
->
-> Họ và tên: ..........................  Mã học viên: ..........................
+> Họ và tên: **Cao Đức Hiếu**
+> Mã học viên: **2A202602701**
 
 ---
 
 ### Câu 1 — Fail fast (CP1)
 
-Trong `Settings`, `agent_api_key` không có giá trị mặc định nên app chết ngay
-khi khởi động nếu thiếu biến môi trường. Hãy mô tả một tình huống cụ thể mà
-việc "chết sớm" này cứu bạn, so với việc để mặc định `"changeme"`.
+Trong `Settings`, `agent_api_key` không có giá trị mặc định nên app chết ngay khi
+khởi động nếu thiếu biến môi trường. Hãy mô tả một tình huống cụ thể mà việc này hữu ích.
 
-> *Câu trả lời của bạn*
+> Khi tạo service mới trên Render, em có thể quên khai báo `AGENT_API_KEY`. Fail fast
+> làm lần deploy đó lỗi ngay trong log khởi động, trước khi service nhận traffic. Nếu dùng
+> khóa mặc định `changeme`, health check vẫn có thể xanh và người ngoài đoán được khóa để
+> gọi `/ask`, làm phát sinh chi phí. Lỗi cấu hình sớm vì vậy dễ phát hiện và an toàn hơn.
 
 ---
 
 ### Câu 2 — Log cho máy đọc (CP1)
 
-Chạy service và gọi `/ask` vài lần. Dán một dòng log JSON bạn thu được, rồi
-nêu **hai** việc bạn làm được với dòng log đó mà `print("đã trả lời xong")`
-không làm được.
+Một dòng log JSON thu được khi gọi `/ask`:
 
-> *Câu trả lời của bạn*
+```json
+{"event":"ask_completed","level":"info","timestamp":"2026-09-29T04:56:36.055682+00:00","user_id":"reflection-test","tokens_in":6,"tokens_out":38,"cost_usd":0.0000237}
+```
+
+> Với log này em có thể lọc/đếm các event `ask_completed` theo `user_id`, đồng thời
+> tổng hợp `cost_usd` hoặc số token để theo dõi ngân sách và đặt cảnh báo. Một chuỗi
+> `print("đã trả lời xong")` không có trường dữ liệu ổn định để hệ thống log truy vấn,
+> nhóm hoặc tính tổng tự động.
 
 ---
 
 ### Câu 3 — Kích thước image (CP2)
 
-Build cả hai phiên bản và ghi lại số đo thật:
-
-```bash
-docker build -f <Dockerfile-1-stage> -t agent:single .
-docker build -t agent:multi .
-docker images | grep agent
-```
-
 | Bản | Dung lượng |
-|-----|-----------|
-| 1 stage (bản đầu) | ... MB |
-| Multi-stage | ... MB |
+|-----|-----------:|
+| 1 stage, base `python:3.11` đầy đủ | khoảng 1 GB; lần build đo thử bị dừng khi đang tải các layer base lớn |
+| Multi-stage, runtime `python:3.11-slim` | 271 MB |
 
-Giải thích: phần dung lượng chênh lệch đó là những gì?
-
-> *Câu trả lời của bạn*
+> Lệnh `docker images day12-agent:prod` cho thấy image cuối là 271 MB. Khi thử build
+> lại starter một stage, riêng các layer nén của base đầy đủ đã phải tải khoảng 334 MB
+> (trong đó có layer 236 MB), nên quá trình tải quá chậm và em đã dừng. Phần chênh lệch
+> chủ yếu là hệ điều hành/toolchain của image Python đầy đủ và các thành phần chỉ cần
+> trong lúc build. Runtime slim chỉ nhận dependency đã cài cùng source nên nhỏ hơn rõ rệt.
 
 ---
 
 ### Câu 4 — Thứ tự lệnh trong Dockerfile (CP2)
 
-Sửa một ký tự trong `app/main.py` rồi build lại. Với Dockerfile của bạn, những
-layer nào được dùng lại từ cache, layer nào phải chạy lại? Nếu bạn đặt
-`COPY . .` lên trước `RUN pip install` thì kết quả khác thế nào?
-
-> *Câu trả lời của bạn*
+> Dockerfile copy `requirements.txt` và chạy `pip install` trước khi copy `app/` và
+> `utils/`. Vì vậy khi chỉ sửa một ký tự trong `app/main.py`, layer base, layer copy
+> requirements và layer cài dependency vẫn lấy từ cache; chỉ các layer copy source trở
+> đi phải chạy lại. Nếu đặt `COPY . .` trước `RUN pip install`, mọi thay đổi source làm
+> invalid cache và Docker phải cài lại toàn bộ dependency, khiến build chậm hơn nhiều.
 
 ---
 
 ### Câu 5 — Vì sao không chạy bằng root (CP2)
 
-Container mặc định chạy bằng root. Mô tả chuỗi sự kiện dẫn từ "một lỗ hổng
-trong code Python của bạn" tới "kẻ tấn công có quyền cao trên máy host", và
-lệnh `USER` cắt đứt chuỗi đó ở chỗ nào.
-
-> *Câu trả lời của bạn*
+> Nếu code Python có lỗ hổng cho phép thực thi lệnh, kẻ tấn công trước hết chiếm quyền
+> trong process của container. Khi process chạy root, chúng có quyền sửa file hệ thống
+> trong container và có thể lợi dụng volume, socket Docker hoặc lỗi runtime để tác động
+> tới host với quyền cao. Lệnh `USER appuser` cắt chuỗi ở bước sau khi chiếm process:
+> mã độc chỉ có UID không đặc quyền, nên phạm vi đọc/ghi và hậu quả bị giới hạn.
 
 ---
 
 ### Câu 6 — Cửa sổ trượt (CP3)
 
-Rate limit của bạn dùng sliding window 60 giây. Nếu thay bằng cách đếm theo
-phút đồng hồ (reset lúc giây 00), một người dùng có thể gửi tối đa bao nhiêu
-request trong 2 giây liên tiếp khi hạn mức là 10/phút? Giải thích cách đạt được
-con số đó.
-
-> *Câu trả lời của bạn*
+> Với bộ đếm theo phút đồng hồ và hạn mức 10/phút, user có thể gửi 10 request ở
+> 10:00:59 rồi thêm 10 request ngay tại 10:01:00. Như vậy có tối đa 20 request trong
+> khoảng 2 giây nhưng mỗi phút lịch vẫn chỉ ghi 10. Sliding window 60 giây nhìn lại đúng
+> 60 giây gần nhất nên loạt thứ hai bị chặn sau khi quota của loạt đầu đã dùng hết.
 
 ---
 
 ### Câu 7 — Rate limit và cost guard (CP3)
 
-Hai cơ chế này khác nhau ở điểm nào? Cho một tình huống mà rate limit cho qua
-nhưng cost guard phải chặn, và một tình huống ngược lại.
-
-> *Câu trả lời của bạn*
+> Rate limit bảo vệ tốc độ/số request trong 60 giây, còn cost guard bảo vệ tổng tiền
+> theo user trong tháng UTC. Một user gửi ít request nhưng prompt rất lớn có thể không
+> vượt rate limit nhưng vượt ngân sách và bị cost guard trả 402. Ngược lại, user gửi
+> nhiều câu rất ngắn trong vài giây khi ngân sách còn nhiều sẽ bị rate limiter trả 429,
+> dù cost guard vẫn cho qua nếu chỉ xét chi phí.
 
 ---
 
-### Câu 8 — /health khác /ready (CP4)
+### Câu 8 — `/health` khác `/ready` (CP4)
 
-Nếu gộp hai endpoint làm một và cho nó kiểm tra Redis, chuyện gì xảy ra với cụm
-3 container khi Redis mất kết nối 30 giây? Trả lời theo đúng thứ tự sự kiện.
-
-> *Câu trả lời của bạn*
+> Nếu gộp hai endpoint và cho health check phụ thuộc Redis, khi Redis mất kết nối thì
+> cả ba container cùng trả 503. Orchestrator coi cả ba process bị hỏng và lần lượt restart
+> chúng, dù code ứng dụng vẫn sống. Redis vẫn chưa phục hồi nên container mới tiếp tục
+> fail, tạo vòng lặp restart và làm mất toàn bộ khả năng phục vụ. Khi tách riêng, `/health`
+> vẫn 200 nên container không bị restart; `/ready` trả 503 để load balancer tạm ngừng gửi
+> request. Redis phục hồi thì readiness tự xanh và traffic quay lại.
 
 ---
 
 ### Câu 9 — Stateless (CP4)
 
-Chạy `docker compose up --scale agent=3` rồi gọi `/ask` nhiều lần với cùng một
-`X-User-Id`. Quan sát `history_length` trong response. Nếu lịch sử được lưu
-trong một dict Python thay vì Redis, bạn sẽ thấy con số đó thay đổi thế nào?
-
-> *Câu trả lời của bạn*
+> Compose hiện map cố định `8000:8000`, nên scale trực tiếp ba replica trên cùng host sẽ
+> xung đột cổng nếu chưa đặt Nginx phía trước. Em kiểm chứng tính stateless bằng test tạo
+> hai `ConversationStore` độc lập dùng chung một Redis: instance B đọc được message do
+> instance A ghi, và request thứ hai thấy `history_length=2`. Với dict Python, mỗi replica
+> có lịch sử riêng; request bị phân phối luân phiên sẽ cho độ dài nhảy không đều như
+> `0, 0, 0, 2, 2, 2` thay vì tăng thống nhất `0, 2, 4, ...`.
 
 ---
 
 ### Câu 10 — Deploy thật (CP5)
 
-Ghi lại **một** lỗi bạn gặp khi deploy lên cloud (build fail, health check
-timeout, sai REDIS_URL, app không đọc `$PORT`...): thông báo lỗi là gì, bạn
-tìm ra nguyên nhân bằng cách nào, và sửa ra sao?
-
-> *Câu trả lời của bạn*
+> Khi kiểm tra service Render, một lần `pytest tests/test_cp5.py` báo
+> `ConnectError: getaddrinfo failed` cho URL `onrender.com`, dù dashboard báo Live. Em
+> đối chiếu bằng cách mở `/health` trên trình duyệt và dùng `curl -v`; cả `/health` và
+> `/ready` đều trả 200, nên xác định đây là lỗi DNS tạm thời ở môi trường chạy test chứ
+> không phải app hoặc `REDIS_URL`. Em chạy lại test từ terminal máy sau khi DNS hoạt động;
+> kết quả CP5 là 9 passed, 4 test local fallback được skip vì em deploy cloud thật.
